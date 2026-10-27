@@ -5,8 +5,9 @@ langgraph
 langchain
 langchain-core
 langchain-openai
-langchain-chroma
+langchain-chroma==0.1.2
 langchain-community
 langchain-text-splitters
 python-dotenv
 requests
+chromadb==0.4.24
