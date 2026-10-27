@@ -1,8 +1,12 @@
 streamlit
 openai
+pydantic
 langgraph
-python-dotenv
-requests
 langchain
 langchain-core
 langchain-openai
+langchain-chroma
+langchain-community
+langchain-text-splitters
+python-dotenv
+requests
