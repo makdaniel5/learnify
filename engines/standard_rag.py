@@ -1,11 +1,15 @@
+import os
 import time
+from typing import List, Dict
 
+from dotenv import load_dotenv
 from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
-from typing import List, Dict
-from .base import BaseEngine, EngineResponse, TelemetryData
 from langchain_chroma import Chroma
-from dotenv import load_dotenv
+import chromadb
+from chromadb.config import Settings
+
+from .base import BaseEngine, EngineResponse, TelemetryData
 
 load_dotenv()
 
@@ -22,10 +26,18 @@ class StandardRAGEngine(BaseEngine):
             temperature=self.temperature,
         )
         self.embedding = OpenAIEmbeddings(model="text-embedding-3-small")
-        self.human_vectorstore = Chroma(persist_directory=HUMAN_DB_PATH,
-                                        embedding_function=self.embedding)
-        self.real_vectorstore = Chroma(persist_directory=REAL_DB_PATH,
-                                       embedding_function=self.embedding)
+
+        # Chroma adatbázisok betöltése a memóriazárolási hiba elkerülésével
+        self.human_vectorstore = Chroma(
+            persist_directory=HUMAN_DB_PATH,
+            embedding_function=self.embedding,
+            client_settings=Settings(is_persistent=True, allow_reset=True)
+        )
+        self.real_vectorstore = Chroma(
+            persist_directory=REAL_DB_PATH,
+            embedding_function=self.embedding,
+            client_settings=Settings(is_persistent=True, allow_reset=True)
+        )
 
     def generate_response(
             self,
@@ -60,9 +72,15 @@ class StandardRAGEngine(BaseEngine):
         results = vectorstore.similarity_search(user_query, k=3)
         if not results:
             latency_seconds = time.time() - start_time
-            return EngineResponse(response_text="A rendelkezésre álló tananyag nem tartalmaz elegendő információt a kérdés megválaszolásához.", scaffold_level=None, cognitive_zone=None,
-                                  grader_evaluation=None,
-                                  retry_count=0, telemetry=TelemetryData(latency_seconds=latency_seconds, prompt_tokens=0, completion_tokens=0, total_tokens=0))
+            return EngineResponse(
+                response_text="A rendelkezésre álló tananyag nem tartalmaz elegendő információt a kérdés megválaszolásához.",
+                scaffold_level=None,
+                cognitive_zone=None,
+                grader_evaluation=None,
+                retry_count=0,
+                telemetry=TelemetryData(latency_seconds=latency_seconds, prompt_tokens=0, completion_tokens=0,
+                                        total_tokens=0)
+            )
 
         context_text = "\n\n---\n\n".join(doc.page_content for doc in results)
         prompt = ChatPromptTemplate.from_template(template)
@@ -85,15 +103,34 @@ class StandardRAGEngine(BaseEngine):
             completion_tokens = usage.get("completion_tokens", 0)
             total_tokens = usage.get("total_tokens", 0)
 
-            telemetry_data = TelemetryData(latency_seconds=latency_seconds, prompt_tokens=prompt_tokens,
-                                           completion_tokens=completion_tokens, total_tokens=total_tokens)
-            return EngineResponse(response_text=response_text, scaffold_level=None, cognitive_zone=None,
-                                  grader_evaluation=None, retry_count=0, telemetry=telemetry_data)
+            telemetry_data = TelemetryData(
+                latency_seconds=latency_seconds,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                total_tokens=total_tokens
+            )
+            return EngineResponse(
+                response_text=response_text,
+                scaffold_level=None,
+                cognitive_zone=None,
+                grader_evaluation=None,
+                retry_count=0,
+                telemetry=telemetry_data
+            )
 
         except Exception as e:
             latency_seconds = time.time() - start_time
-            telemetry_data = TelemetryData(latency_seconds=latency_seconds, prompt_tokens=0, completion_tokens=0,
-                                           total_tokens=0)
-            return EngineResponse(response_text=f"A rendszerben hiba lépett fel: {str(e)}", scaffold_level=None, cognitive_zone=None,
-                                  grader_evaluation=None,
-                                  retry_count=0, telemetry=telemetry_data)
+            telemetry_data = TelemetryData(
+                latency_seconds=latency_seconds,
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0
+            )
+            return EngineResponse(
+                response_text=f"A rendszerben hiba lépett fel: {str(e)}",
+                scaffold_level=None,
+                cognitive_zone=None,
+                grader_evaluation=None,
+                retry_count=0,
+                telemetry=telemetry_data
+            )
