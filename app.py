@@ -2,6 +2,7 @@ import random
 import os
 import streamlit as st
 import time
+import uuid
 from dotenv import load_dotenv
 from pip._internal.models import target_python
 from requests.packages import target
