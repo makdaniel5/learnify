@@ -7,6 +7,9 @@ from dotenv import load_dotenv
 from pip._internal.models import target_python
 from requests.packages import target
 from streamlit.runtime.state import session_state
+import gspread
+from google.oauth2.service_account import Credentials
+import json
 
 from engines.baseline_llm import BaselineLLMEngine
 from engines.standard_rag import StandardRAGEngine
@@ -14,6 +17,49 @@ from engines.crag_agent.agent_engine import PedagogicalCRAGEngine
 
 st.set_page_config(layout="wide", page_title="Learnify")
 load_dotenv()
+
+
+# ==============================================================================
+# 0. GOOGLE SHEETS FUNKCIÓK
+# ==============================================================================
+
+def save_to_google_sheets(data_to_save: dict) -> bool:
+    try:
+        scopes = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+
+        creds_dict = st.secrets["gcp_service_account"]
+
+        credentials = Credentials.from_service_account_info(creds_dict, scopes=scopes)
+
+        client = gspread.authorize(credentials)
+
+        spreadsheet_id = st.secrets["google_sheets"]["spreadsheet_id"]
+
+        sheet = client.open_by_key(spreadsheet_id).sheet1
+
+        row = [
+            data_to_save.get("subject_id"),
+            data_to_save.get("group"),
+            data_to_save.get("real_test_score"),
+            data_to_save.get("human_test_score"),
+            json.dumps(data_to_save.get("chat_history", []), ensure_ascii=False),
+            json.dumps(data_to_save.get("response_times", [])),
+            data_to_save.get("tokens_used", 0),
+            data_to_save.get("date", time.strftime("%Y-%m-%d %H:%M:%S"))
+        ]
+
+        sheet.append_row(row)
+
+        return True
+
+    except Exception as e:
+        print(f"Hiba a Google Sheets mentés során: {e}")
+        return False
+
+
 
 # ==============================================================================
 # 1. RENDSZER- ÉS ADAT-INICIALIZÁLÁS
@@ -75,7 +121,7 @@ if "llm_engine" not in st.session_state:
 if "rag_engine" not in st.session_state:
     st.session_state["rag_engine"] = StandardRAGEngine()
 
-if "crag_enginge" not in st.session_state:
+if "crag_engine" not in st.session_state:
     st.session_state["crag_engine"] = PedagogicalCRAGEngine()
 
 # ==============================================================================
@@ -371,27 +417,36 @@ def render_finished_screen():
 
     import csv
 
-    data = [{
+    data = {
         'subject_id': st.session_state.get("subject_log", {}).get("subject_id", ""),
         'group': st.session_state.get("subject_log", {}).get("group", ""),
         'real_test_score': st.session_state.get("subject_log", {}).get("real_test_score", 0),
         'human_test_score': st.session_state.get("subject_log", {}).get("human_test_score", 0),
         'chat_history': st.session_state.get("agent_state", {}).get("chat_history", []),
         'response_times': st.session_state.get("subject_log", {}).get("response_times", []),
-        'tokens_used': st.session_state.get("agent_state", {}).get("tokens_used", {}).get("total_tokens", 0)
-    }]
+        'tokens_used': st.session_state.get("agent_state", {}).get("tokens_used", {}).get("total_tokens", 0),
+        'date': time.strftime("%Y-%m-%d %H:%M:%S", time.localtime()),
+    }
 
-    file_exists = os.path.isfile('research_records.csv')
+    sheets_success = save_to_google_sheets(data)
 
-    with open('research_records.csv', 'a', newline='', encoding='utf-8') as csvfile:
-        fieldnames = ['subject_id', 'group', 'real_test_score', 'human_test_score', "chat_history",
-                      "response_times", "tokens_used"]
-        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
-        if not file_exists:
-            writer.writeheader()
-        writer.writerows(data)
+    try:
+        file_exists = os.path.isfile('research_records.csv')
 
-    st.success("Az adataid sikeresen rögzítésre kerültek.")
+        with open('research_records.csv', 'a', newline='', encoding='utf-8') as csvfile:
+            fieldnames = ['subject_id', 'group', 'real_test_score', 'human_test_score', "chat_history",
+                          "response_times", "tokens_used", "date"]
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerows([data])
+    except Exception:
+        pass
+
+    if sheets_success:
+        st.success("Az adataid sikeresen rögzítésre kerültek a felhős adatbázisban.")
+    else:
+        st.warning("A felhős mentés nem sikerült, de a helyi mentés megtörtént.")
 
 
 @st.fragment(run_every=1)
